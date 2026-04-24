@@ -1,0 +1,103 @@
+{
+  "name": "bawbel-scanner",
+  "displayName": "Bawbel Scanner",
+  "description": "Scan agentic AI skills and MCP components for AVE vulnerabilities — inline diagnostics, status bar, auto-scan on save.",
+  "version": "1.0.0",
+  "publisher": "bawbel",
+  "license": "Apache-2.0",
+  "icon": "images/icon.png",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Linters", "Other"],
+  "keywords": ["security", "MCP", "AI", "agentic", "AVE", "skill", "prompt injection"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bawbel/vscode-bawbel"
+  },
+  "activationEvents": [
+    "onLanguage:markdown",
+    "onLanguage:yaml",
+    "onLanguage:json"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "bawbel.scanFile",
+        "title": "Bawbel: Scan Current File",
+        "icon": "$(shield)"
+      },
+      {
+        "command": "bawbel.scanWorkspace",
+        "title": "Bawbel: Scan Workspace"
+      },
+      {
+        "command": "bawbel.showFindings",
+        "title": "Bawbel: Show Findings Panel"
+      },
+      {
+        "command": "bawbel.clearFindings",
+        "title": "Bawbel: Clear Findings"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "bawbel.scanFile",
+        "key": "ctrl+shift+b",
+        "mac": "cmd+shift+b",
+        "when": "editorIsOpen"
+      }
+    ],
+    "configuration": {
+      "title": "Bawbel Scanner",
+      "properties": {
+        "bawbel.executable": {
+          "type": "string",
+          "default": "bawbel",
+          "description": "Path to the bawbel CLI executable"
+        },
+        "bawbel.scanOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically scan files when saved"
+        },
+        "bawbel.failOnSeverity": {
+          "type": "string",
+          "enum": ["critical", "high", "medium", "low", "none"],
+          "default": "high",
+          "description": "Minimum severity to show as error (vs warning)"
+        },
+        "bawbel.enableLLM": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable LLM semantic analysis (requires API key)"
+        },
+        "bawbel.noIgnore": {
+          "type": "boolean",
+          "default": false,
+          "description": "Override all bawbel-ignore suppressions"
+        }
+      }
+    },
+    "menus": {
+      "editor/title": [
+        {
+          "command": "bawbel.scanFile",
+          "when": "resourceExtname == .md || resourceExtname == .yaml || resourceExtname == .yml",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.3.0",
+    "@vscode/vsce": "^2.24.0"
+  }
+}

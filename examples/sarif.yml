@@ -1,0 +1,33 @@
+# Full scan with SARIF upload to GitHub Security tab
+name: Bawbel Security Scan (SARIF)
+on: [push, pull_request]
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Scan for AVE vulnerabilities
+        uses: bawbel/scan-action@v1
+        id: bawbel
+        with:
+          path: .
+          fail-on-severity: none   # don't fail — upload first
+          format: sarif
+
+      - name: Upload to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: ${{ steps.bawbel.outputs.sarif-file }}
+
+      - name: Fail on critical findings
+        if: steps.bawbel.outputs.findings-count != '0'
+        run: |
+          echo "Found ${{ steps.bawbel.outputs.findings-count }} AVE findings"
+          echo "Risk score: ${{ steps.bawbel.outputs.risk-score }}"
+          exit 1
