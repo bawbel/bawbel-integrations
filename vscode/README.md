@@ -3,44 +3,54 @@
 Scan agentic AI skills, MCP manifests, and system prompts for
 [AVE vulnerabilities](https://github.com/bawbel/bawbel-ave) directly in VS Code.
 
-## Requirements
+## Installation
 
-```bash
-pip install "bawbel-scanner[all]"
-```
+Install from the VS Code Marketplace — search **Bawbel Scanner**.
+
+**That's it.** The extension automatically installs `bawbel-scanner` in
+the background on first activation. No terminal, no pip, no manual steps.
+
+## What happens on first install
+
+1. You install the extension from the Marketplace
+2. You open a `.md`, `.yaml`, or `.json` file
+3. The extension checks if `bawbel` CLI is available
+4. If not found — it runs `pip install "bawbel-scanner[all]"` automatically
+5. A notification confirms when ready
+6. Findings appear inline immediately
+
+If auto-install fails (unusual network/permission setups), the output
+channel shows the exact manual command and links to settings.
 
 ## Features
 
-- **Inline diagnostics** — red/yellow squiggles on finding lines in the editor
-- **Problems tab** — all findings listed with AVE ID, severity, and engine
+- **Zero setup** — auto-installs CLI on first use
+- **Inline diagnostics** — red/yellow squiggles on finding lines
+- **Problems tab** — all findings with AVE ID, severity, engine
 - **Status bar** — `Bawbel: ✓ clean` or `Bawbel: 3 finding(s)` always visible
-- **Auto-scan on save** — scans `.md`, `.yaml`, `.yml`, `.json` on every save
-- **Keyboard shortcut** — `Ctrl+Shift+B` / `Cmd+Shift+B` to scan current file
-- **Workspace scan** — scan every skill file in the project at once
-- **AVE links** — click finding code to open the AVE record in browser
-
-## Usage
-
-1. Open a skill file (`.md`, `.yaml`)
-2. Press `Ctrl+Shift+B` to scan — or just save the file
-3. Findings appear as red squiggles inline and in the Problems tab
-4. Click a finding's AVE ID to open the full vulnerability record
+- **Auto-scan on save** — scans `.md`, `.yaml`, `.yml`, `.json`, `.txt`
+- **Keyboard shortcut** — `Ctrl+Shift+B` / `Cmd+Shift+B`
+- **Workspace scan** — scan every skill file at once
+- **AVE links** — click a finding's code to open the full vulnerability record
 
 ## Configuration
 
+All settings are optional — the extension works with zero configuration.
+
 | Setting | Default | Description |
 |---|---|---|
-| `bawbel.executable` | `bawbel` | Path to bawbel CLI |
+| `bawbel.executable` | `bawbel` | Custom path to bawbel CLI (if not in PATH) |
 | `bawbel.scanOnSave` | `true` | Auto-scan on save |
 | `bawbel.failOnSeverity` | `high` | Show as error vs warning |
-| `bawbel.enableLLM` | `false` | Enable LLM semantic analysis |
-| `bawbel.noIgnore` | `false` | Override suppressions (audit mode) |
+| `bawbel.enableLLM` | `false` | Enable LLM semantic analysis (requires API key) |
+| `bawbel.noIgnore` | `false` | Override suppressions — audit mode |
 
 ## Commands
 
 | Command | Shortcut | Description |
 |---|---|---|
-| Bawbel: Scan Current File | `Ctrl+Shift+B` | Scan the active file |
+| Bawbel: Scan Current File | `Ctrl+Shift+B` | Scan the active editor file |
 | Bawbel: Scan Workspace | — | Scan all skill files in workspace |
+| Bawbel: Install Scanner | — | Manually trigger CLI install |
 | Bawbel: Show Findings | — | Open the Bawbel output channel |
 | Bawbel: Clear Findings | — | Clear all diagnostics |

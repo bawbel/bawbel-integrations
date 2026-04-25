@@ -11,8 +11,13 @@
   "keywords": ["security", "MCP", "AI", "agentic", "AVE", "skill", "prompt injection"],
   "repository": {
     "type": "git",
-    "url": "https://github.com/bawbel/vscode-bawbel"
+    "url": "https://github.com/bawbel/bawbel-integrations",
+    "directory": "vscode"
   },
+  "bugs": {
+    "url": "https://github.com/bawbel/bawbel-integrations/issues"
+  },
+  "homepage": "https://github.com/bawbel/bawbel-integrations/tree/main/vscode#readme",
   "activationEvents": [
     "onLanguage:markdown",
     "onLanguage:yaml",
