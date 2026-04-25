@@ -1,7 +1,19 @@
-.vscode/**
+# .vscodeignore — controls what is EXCLUDED from the .vsix marketplace package
+# This is NOT a .gitignore — it only affects vsce package/publish
+
+# Test infrastructure — not needed at runtime
 .vscode-test/**
-src/**
+.vscode/**
+
+# Build tooling — not needed at runtime
 node_modules/**
-*.ts
 tsconfig.json
+.eslintrc*
+.prettierrc*
+
+# Source maps — optional, include if you want users to debug
+# *.map
+
+# Development files
 .gitignore
+*.vsix

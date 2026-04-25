@@ -1,7 +1,5 @@
 name: Bawbel Scanner
-description: >
-  Scan agentic AI components — MCP servers, skills, system prompts — for
-  AVE vulnerabilities before they reach production.
+description: "Scan agentic AI components — MCP servers, skills, system prompts — for AVE vulnerabilities before they reach production."
 author: Bawbel
 
 branding:
@@ -10,55 +8,55 @@ branding:
 
 inputs:
   path:
-    description: Path to scan (file or directory)
+    description: "Path to scan (file or directory)"
     required: false
     default: "."
 
   recursive:
-    description: Scan directories recursively
+    description: "Scan directories recursively"
     required: false
     default: "true"
 
   fail-on-severity:
-    description: Exit with code 2 if findings at this severity or above. One of: critical, high, medium, low, none
+    description: "Exit with code 2 if findings at this severity or above. One of: critical, high, medium, low, none"
     required: false
     default: "high"
 
   format:
-    description: Output format — text, json, sarif
+    description: "Output format. One of: text, json, sarif"
     required: false
     default: "sarif"
 
   no-ignore:
-    description: Override all bawbel-ignore suppressions (audit mode)
+    description: "Override all bawbel-ignore suppressions (audit mode)"
     required: false
     default: "false"
 
   version:
-    description: Bawbel Scanner version to install (default: latest)
+    description: "Bawbel Scanner version to install (default: latest)"
     required: false
     default: "latest"
 
   extras:
-    description: pip extras to install e.g. "yara,semgrep,llm" (default: all)
+    description: "pip extras to install. One of: yara, semgrep, llm, magika, all"
     required: false
     default: "all"
 
 outputs:
   sarif-file:
-    description: Path to the generated SARIF file (when format is sarif)
+    description: "Path to the generated SARIF file (when format is sarif)"
     value: ${{ steps.scan.outputs.sarif-file }}
 
   findings-count:
-    description: Number of active findings
+    description: "Number of active findings"
     value: ${{ steps.scan.outputs.findings-count }}
 
   risk-score:
-    description: Risk score 0.0–10.0
+    description: "Risk score 0.0 to 10.0"
     value: ${{ steps.scan.outputs.risk-score }}
 
   result:
-    description: clean or findings
+    description: "clean or findings"
     value: ${{ steps.scan.outputs.result }}
 
 runs:
@@ -93,7 +91,6 @@ runs:
           echo "sarif-file=$SARIF_FILE" >> $GITHUB_OUTPUT
         fi
 
-        # Run again for JSON to extract metadata
         JSON_OUT=$(bawbel scan "${{ inputs.path }}" $ARGS --format json 2>/dev/null || echo "[]")
 
         FINDINGS=$(echo "$JSON_OUT" | python3 -c "
@@ -102,10 +99,10 @@ runs:
         total = sum(len(r.get('findings',[])) for r in data)
         score = max((r.get('risk_score',0) for r in data), default=0)
         result = 'findings' if total > 0 else 'clean'
-        print(f'count={total}')
-        print(f'score={score:.1f}')
-        print(f'result={result}')
-        " 2>/dev/null || echo -e "count=0\nscore=0.0\nresult=clean")
+        print('count=' + str(total))
+        print('score=' + str(round(score, 1)))
+        print('result=' + result)
+        " 2>/dev/null || printf "count=0\nscore=0.0\nresult=clean")
 
         echo "findings-count=$(echo "$FINDINGS" | grep count= | cut -d= -f2)" >> $GITHUB_OUTPUT
         echo "risk-score=$(echo "$FINDINGS" | grep score= | cut -d= -f2)" >> $GITHUB_OUTPUT
@@ -123,9 +120,14 @@ runs:
           exit 0
         fi
 
-        # Re-run with fail-on-severity flag
-        bawbel scan "${{ inputs.path }}" \
-          $([[ "${{ inputs.recursive }}" = "true" ]] && echo "--recursive") \
-          $([[ "${{ inputs.no-ignore }}" = "true" ]] && echo "--no-ignore") \
+        EXTRA_ARGS=""
+        if [ "${{ inputs.recursive }}" = "true" ]; then
+          EXTRA_ARGS="$EXTRA_ARGS --recursive"
+        fi
+        if [ "${{ inputs.no-ignore }}" = "true" ]; then
+          EXTRA_ARGS="$EXTRA_ARGS --no-ignore"
+        fi
+
+        bawbel scan "${{ inputs.path }}" $EXTRA_ARGS \
           --fail-on-severity "${{ inputs.fail-on-severity }}" \
           --format text
