@@ -1,41 +1,55 @@
 # Changelog
 
+## [1.1.0] — 2026-04-26
+
+### Added
+- **Full modular architecture** — extension refactored into `core/`, `features/`,
+  `ui/` modules. Each module has a single responsibility. Contributors change one
+  file without breaking others. See README for module map.
+- **`Bawbel: Scan Folder…`** — pick any folder in the workspace to scan
+- **`Bawbel: Show Report`** (`Cmd+Alt+R`) — opens `bawbel report` output in a
+  webview panel beside the editor. Full remediation guide: AVE IDs, CVSS-AI scores,
+  OWASP mapping, step-by-step fix instructions.
+- **Watch mode** — `Bawbel: Start Watch Mode` spawns a background `bawbel --watch`
+  process. Scope: file / folder / workspace (configurable). Uses pattern+yara only
+  (~25ms) — never slows the machine.
+- **`bawbel.watchScope`** setting — `file` | `folder` | `workspace`
+- **`bawbel.watchMode`** setting — auto-start watch on activation (default: false)
+- **FP suppression** — right-click any finding → suppress false positive → enter
+  reason → saved to `.bawbel-suppress.json`. Suppressed findings show as faded hints.
+- **Remove suppression** — right-click a suppressed hint → remove suppression
+- **`Bawbel: Show Suppressions`** — lists all active suppressions in Output panel
+- **Right-click Explorer** — scan folder or workspace from the file tree
+- **Animated GIF demos** in README — scan, report, FP suppression, watch mode
+
+### Changed
+- `extension.ts` is now a thin orchestrator under 250 lines — zero business logic
+- `core/types.ts` is the single source of truth for all shared types
+- `core/parser.ts` is the only place that parses CLI JSON output
+- Auto-scan on save skips automatically when watch mode is active (no duplicate scans)
+- Status bar count excludes suppressed findings
+- Watch mode uses `pattern,yara` engines only — Semgrep/LLM never run in background
+
+### Fixed
+- Binary detection covers pipx installs and `~/.local/bin/` paths
+- Suppression re-renders diagnostics from cache — no re-scan needed
+
 ## [1.0.1] — 2026-04-26
 
 ### Fixed
-- **JSON parsing** — correctly reads bawbel CLI output format: top-level array
-  `[{ file_path, findings, risk_score, scan_time_ms, ... }]`
-- **Binary detection** — calls `bawbel` binary directly (installed by pip at
-  `/usr/local/bin/bawbel`); no longer tries `python3 -m bawbel`
-- **Finding details** — hover tooltip now shows full finding detail:
-  severity emoji, matched text, AVE ID, CVSS-AI score, engine, OWASP tags,
-  and a direct link to the PiranhaDB record
-- **Keybinding conflict** — changed from `Cmd+Shift+B` (VS Code build task)
-  to `Cmd+Alt+B` / `Ctrl+Alt+B`
+- JSON parsing — correct CLI output schema (`file_path` not `file`)
+- Binary detection — calls `bawbel` directly, not `python3 -m bawbel`
+- Hover tooltip shows full finding detail
+- Keybinding conflict — `Cmd+Shift+B` → `Cmd+Alt+B`
 
 ### Added
-- **Inline remediation hints** — every finding shows a "How to fix" section
-  directly in the hover tooltip. Covers 12 rule IDs with specific, actionable
-  guidance. Falls back to the finding's `description` field for unknown rules.
-- **Output panel logging** — raw stdout, stderr, and exit code logged to the
-  "Bawbel Scanner" Output channel on every scan for easier debugging
-- **Scan timing** — summary line shows scan duration in ms per file
-- **`bawbel.bawbelPath` setting** — override the path to the bawbel binary
-  if auto-detection fails
-
-### Changed
-- Removed `bawbel.pythonPath` setting (replaced by `bawbel.bawbelPath`)
-- Removed `bawbel.extras` setting (CLI manages its own extras)
-- Status bar tooltip updated to reflect `Cmd+Alt+B` shortcut
+- Inline remediation hints (12 rule IDs)
+- Output panel logging — stdout, stderr, exit code per scan
+- `bawbel.bawbelPath` setting
 
 ## [1.0.0] — 2026-04-26
 
 ### Added
 - Initial release
-- Inline diagnostics for AVE findings (squiggles on finding lines)
-- Status bar: `Bawbel: ✓ clean` or `Bawbel: N finding(s)`
-- Auto-scan on save for `.md .yaml .yml .json .txt`
-- `Cmd+Shift+B` / `Ctrl+Shift+B` to scan current file
-- Workspace scan via command palette
-- Click finding code to open full AVE record in PiranhaDB
-- Zero setup — auto-installs `bawbel-scanner` on first activation
+- Inline diagnostics, status bar, auto-scan on save
+- Workspace scan, PiranhaDB links, auto-install CLI
