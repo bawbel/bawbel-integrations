@@ -2,7 +2,7 @@
   "name": "bawbel-scanner",
   "displayName": "Bawbel Scanner",
   "description": "AVE vulnerability scanner for agentic AI components \u2014 SKILL.md, MCP servers, system prompts. Inline diagnostics, auto-scan on save, 37 rules, 40 AVE records.",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "publisher": "bawbel",
   "license": "MIT",
   "icon": "images/icon.png",
@@ -54,6 +54,26 @@
         "title": "Bawbel: Scan Workspace"
       },
       {
+        "command": "bawbel.scanFolder",
+        "title": "Bawbel: Scan Folder\u2026"
+      },
+      {
+        "command": "bawbel.startWatch",
+        "title": "Bawbel: Start Watch Mode"
+      },
+      {
+        "command": "bawbel.stopWatch",
+        "title": "Bawbel: Stop Watch Mode"
+      },
+      {
+        "command": "bawbel.showReport",
+        "title": "Bawbel: Show Report"
+      },
+      {
+        "command": "bawbel.showSuppressions",
+        "title": "Bawbel: Show Suppressions"
+      },
+      {
         "command": "bawbel.installCLI",
         "title": "Bawbel: Install / Update CLI"
       },
@@ -68,6 +88,12 @@
         "key": "ctrl+alt+b",
         "mac": "cmd+alt+b",
         "when": "editorFocus"
+      },
+      {
+        "command": "bawbel.showReport",
+        "key": "ctrl+alt+r",
+        "mac": "cmd+alt+r",
+        "when": "editorFocus"
       }
     ],
     "configuration": {
@@ -76,7 +102,22 @@
         "bawbel.scanOnSave": {
           "type": "boolean",
           "default": true,
-          "description": "Automatically scan files when saved."
+          "description": "Auto-scan current file on save (pattern+yara, ~25ms). Disabled automatically when watch mode is active."
+        },
+        "bawbel.watchMode": {
+          "type": "boolean",
+          "default": false,
+          "description": "Start watch mode automatically on activation. Off by default \u2014 use 'Bawbel: Start Watch Mode' to enable manually."
+        },
+        "bawbel.watchScope": {
+          "type": "string",
+          "enum": [
+            "file",
+            "folder",
+            "workspace"
+          ],
+          "default": "workspace",
+          "description": "What watch mode monitors. 'workspace' = entire workspace root. 'folder' = prompts for a folder. 'file' = current active file."
         },
         "bawbel.failOnSeverity": {
           "type": "string",
@@ -88,7 +129,7 @@
             "none"
           ],
           "default": "high",
-          "description": "Minimum severity shown as an error squiggle (vs warning)."
+          "description": "Minimum severity shown as an error squiggle (red). Below this threshold shown as a warning (yellow)."
         },
         "bawbel.scanExtensions": {
           "type": "array",
@@ -102,17 +143,17 @@
             ".json",
             ".txt"
           ],
-          "description": "File extensions to scan on save."
+          "description": "File extensions to auto-scan on save."
         },
         "bawbel.bawbelPath": {
           "type": "string",
           "default": "",
-          "description": "Path to bawbel binary. Leave empty to auto-detect (checks PATH and common pip install locations)."
+          "description": "Absolute path to the bawbel binary. Leave empty to auto-detect (checks PATH and common pip install locations)."
         },
         "bawbel.showStatusBar": {
           "type": "boolean",
           "default": true,
-          "description": "Show scan status in the status bar."
+          "description": "Show Bawbel status bar item."
         }
       }
     },
@@ -120,14 +161,24 @@
       "editor/context": [
         {
           "command": "bawbel.scanFile",
-          "group": "bawbel",
+          "group": "bawbel@1",
+          "when": "resourceExtname =~ /\\.(md|yaml|yml|json|txt)$/"
+        },
+        {
+          "command": "bawbel.showReport",
+          "group": "bawbel@2",
           "when": "resourceExtname =~ /\\.(md|yaml|yml|json|txt)$/"
         }
       ],
       "explorer/context": [
         {
+          "command": "bawbel.scanFolder",
+          "group": "bawbel@1",
+          "when": "explorerResourceIsFolder"
+        },
+        {
           "command": "bawbel.scanWorkspace",
-          "group": "bawbel"
+          "group": "bawbel@2"
         }
       ]
     }
