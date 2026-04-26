@@ -1,94 +1,133 @@
 {
   "name": "bawbel-scanner",
   "displayName": "Bawbel Scanner",
-  "description": "Scan agentic AI skills and MCP components for AVE vulnerabilities — inline diagnostics, status bar, auto-scan on save.",
-  "version": "1.0.0",
+  "description": "AVE vulnerability scanner for agentic AI components \u2014 SKILL.md, MCP servers, system prompts. Inline diagnostics, auto-scan on save, 37 rules, 40 AVE records.",
+  "version": "1.0.1",
   "publisher": "bawbel",
-  "license": "Apache-2.0",
+  "license": "MIT",
   "icon": "images/icon.png",
-  "engines": { "vscode": "^1.85.0" },
-  "categories": ["Linters", "Other"],
-  "keywords": ["security", "MCP", "AI", "agentic", "AVE", "skill", "prompt injection"],
   "repository": {
     "type": "git",
-    "url": "https://github.com/bawbel/bawbel-integrations",
-    "directory": "vscode"
+    "url": "https://github.com/bawbel/bawbel-integrations"
   },
+  "homepage": "https://bawbel.io",
   "bugs": {
     "url": "https://github.com/bawbel/bawbel-integrations/issues"
   },
-  "homepage": "https://github.com/bawbel/bawbel-integrations/tree/main/vscode#readme",
+  "keywords": [
+    "security",
+    "ai",
+    "agentic",
+    "mcp",
+    "skill",
+    "prompt injection",
+    "vulnerability",
+    "scanner",
+    "ave",
+    "claude",
+    "llm"
+  ],
+  "categories": [
+    "Linters",
+    "Other"
+  ],
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "main": "./out/extension.js",
   "activationEvents": [
     "onLanguage:markdown",
     "onLanguage:yaml",
-    "onLanguage:json"
+    "onLanguage:json",
+    "workspaceContains:**/*.md",
+    "workspaceContains:**/*.yaml",
+    "workspaceContains:**/*.yml"
   ],
-  "main": "./out/extension.js",
   "contributes": {
     "commands": [
       {
         "command": "bawbel.scanFile",
-        "title": "Bawbel: Scan Current File",
-        "icon": "$(shield)"
+        "title": "Bawbel: Scan Current File"
       },
       {
         "command": "bawbel.scanWorkspace",
         "title": "Bawbel: Scan Workspace"
       },
       {
-        "command": "bawbel.showFindings",
-        "title": "Bawbel: Show Findings Panel"
+        "command": "bawbel.installCLI",
+        "title": "Bawbel: Install / Update CLI"
       },
       {
-        "command": "bawbel.clearFindings",
-        "title": "Bawbel: Clear Findings"
+        "command": "bawbel.openPiranhaDB",
+        "title": "Bawbel: Open PiranhaDB"
       }
     ],
     "keybindings": [
       {
         "command": "bawbel.scanFile",
-        "key": "ctrl+shift+b",
-        "mac": "cmd+shift+b",
-        "when": "editorIsOpen"
+        "key": "ctrl+alt+b",
+        "mac": "cmd+alt+b",
+        "when": "editorFocus"
       }
     ],
     "configuration": {
       "title": "Bawbel Scanner",
       "properties": {
-        "bawbel.executable": {
-          "type": "string",
-          "default": "bawbel",
-          "description": "Path to the bawbel CLI executable"
-        },
         "bawbel.scanOnSave": {
           "type": "boolean",
           "default": true,
-          "description": "Automatically scan files when saved"
+          "description": "Automatically scan files when saved."
         },
         "bawbel.failOnSeverity": {
           "type": "string",
-          "enum": ["critical", "high", "medium", "low", "none"],
+          "enum": [
+            "critical",
+            "high",
+            "medium",
+            "low",
+            "none"
+          ],
           "default": "high",
-          "description": "Minimum severity to show as error (vs warning)"
+          "description": "Minimum severity shown as an error squiggle (vs warning)."
         },
-        "bawbel.enableLLM": {
-          "type": "boolean",
-          "default": false,
-          "description": "Enable LLM semantic analysis (requires API key)"
+        "bawbel.scanExtensions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            ".md",
+            ".yaml",
+            ".yml",
+            ".json",
+            ".txt"
+          ],
+          "description": "File extensions to scan on save."
         },
-        "bawbel.noIgnore": {
+        "bawbel.bawbelPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to bawbel binary. Leave empty to auto-detect (checks PATH and common pip install locations)."
+        },
+        "bawbel.showStatusBar": {
           "type": "boolean",
-          "default": false,
-          "description": "Override all bawbel-ignore suppressions"
+          "default": true,
+          "description": "Show scan status in the status bar."
         }
       }
     },
     "menus": {
-      "editor/title": [
+      "editor/context": [
         {
           "command": "bawbel.scanFile",
-          "when": "resourceExtname == .md || resourceExtname == .yaml || resourceExtname == .yml",
-          "group": "navigation"
+          "group": "bawbel",
+          "when": "resourceExtname =~ /\\.(md|yaml|yml|json|txt)$/"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "bawbel.scanWorkspace",
+          "group": "bawbel"
         }
       ]
     }
@@ -96,13 +135,11 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./",
-    "package": "vsce package"
+    "watch": "tsc -watch -p ./"
   },
   "devDependencies": {
+    "@types/node": "^20.19.39",
     "@types/vscode": "^1.85.0",
-    "@types/node": "^20.0.0",
-    "typescript": "^5.3.0",
-    "@vscode/vsce": "^2.24.0"
+    "typescript": "^5.9.3"
   }
 }
