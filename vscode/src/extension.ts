@@ -87,6 +87,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("bawbel.showSuppressions",  cmdShowSuppressions),
     vscode.commands.registerCommand("bawbel.installCLI",        cmdInstallCLI),
     vscode.commands.registerCommand("bawbel.openPiranhaDB",     cmdOpenPiranhaDB),
+    vscode.commands.registerCommand("bawbel.clearAndRescan",    cmdClearAndRescan),
     vscode.workspace.onDidSaveTextDocument(onDidSave),
     vscode.window.onDidChangeActiveTextEditor(onEditorChange),
     codeActionProvider,
@@ -263,6 +264,18 @@ function cmdOpenPiranhaDB(): void {
 }
 
 // ── Event handlers ────────────────────────────────────────────────────────────
+
+async function cmdClearAndRescan(filePath: string): Promise<void> {
+  // Called after inline bawbel-ignore comment is inserted.
+  // Clears the stale diagnostic immediately, then re-scans so the
+  // CLI can confirm the suppression (once CLI supports ignore comments).
+  diagnostics.clearFile(filePath);
+  refreshStatusBar();
+
+  // Small delay to let the WorkspaceEdit settle before re-scanning
+  await new Promise(resolve => setTimeout(resolve, 300));
+  await runScan(autoScanRequest(filePath));
+}
 
 async function onDidSave(document: vscode.TextDocument): Promise<void> {
   if (scanner?.isWatching) { return; }

