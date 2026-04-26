@@ -1,367 +1,424 @@
-import * as vscode from 'vscode';
-import { execFile, exec } from 'child_process';
-import * as path from 'path';
+import * as vscode from "vscode";
+import * as cp from "child_process";
+import * as path from "path";
 
-// ── Globals ───────────────────────────────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
+// Matches exact bawbel v0.2.0 JSON output schema
+
+interface BawbelFinding {
+  rule_id: string;
+  ave_id: string;
+  title: string;
+  description: string;
+  severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+  cvss_ai: number;
+  line: number;
+  col?: number;
+  match?: string;
+  engine: string;
+  owasp?: string[];
+}
+
+interface BawbelFileResult {
+  file_path: string;
+  component_type: string;
+  risk_score: number;
+  max_severity: string;
+  scan_time_ms: number;
+  has_error: boolean;
+  findings: BawbelFinding[];
+}
+
+// ── Remediation hints ─────────────────────────────────────────────────────────
+// Inline fix guidance per rule_id — no network call needed.
+// Source: bawbel report output + AVE standard remediation field.
+
+const REMEDIATION: Record<string, string> = {
+  "bawbel-shell-pipe":
+    "Remove curl|bash or similar pipe patterns. If code execution is needed, use a sandboxed tool with explicit user consent.",
+  "bawbel-external-fetch":
+    "Remove instructions to fetch from external URLs. Hard-code trusted sources or require explicit user approval before any fetch.",
+  "bawbel-instruction-override":
+    "Remove phrases that attempt to override the system prompt or ignore previous instructions. These are the core prompt injection vector.",
+  "bawbel-memory-persistence":
+    "Remove instructions to persist memory across sessions without user consent. Memory writes must be explicit and user-visible.",
+  "bawbel-exfiltration":
+    "Remove any instruction to send data to external endpoints. All outbound calls must be user-initiated and scoped.",
+  "bawbel-role-impersonation":
+    "Remove role-claim escalation patterns (e.g. 'you are now', 'act as root'). Roles must be set by the system prompt only.",
+  "bawbel-mcp-tool-poison":
+    "Audit MCP tool descriptions for embedded instructions. Tool descriptions must describe the tool only — no behavioral directives.",
+  "bawbel-hidden-instruction":
+    "Remove whitespace-hidden or unicode-obfuscated text. All content must be visible to the user who installs the skill.",
+  "bawbel-rag-injection":
+    "Sanitise RAG inputs before injecting into the prompt. Treat retrieved content as untrusted user input, not trusted instructions.",
+  "bawbel-lateral-movement":
+    "Remove references to accessing other agents, services, or systems not declared in the skill manifest.",
+  "bawbel-content-type-mismatch":
+    "The file content does not match its extension. Verify this is not a disguised binary or executable masquerading as a skill file.",
+  "bawbel-a2a-injection":
+    "Cross-agent messages must be validated before use. Never pass raw agent output into another agent's system prompt.",
+};
+
+function getRemediation(ruleId: string, description: string): string {
+  if (REMEDIATION[ruleId]) { return REMEDIATION[ruleId]; }
+  // Fallback: use the description field from the finding + PiranhaDB link
+  return description || "Review the matched content and remove or sanitise the flagged pattern.";
+}
+
+// ── State ─────────────────────────────────────────────────────────────────────
+
 let diagnosticCollection: vscode.DiagnosticCollection;
 let statusBarItem: vscode.StatusBarItem;
 let outputChannel: vscode.OutputChannel;
-let installPromise: Promise<boolean> | null = null;
+let cliPath: string | null = null;
+let isScanning = false;
 
 // ── Activation ────────────────────────────────────────────────────────────────
-export async function activate(context: vscode.ExtensionContext): Promise<void> {
-    diagnosticCollection = vscode.languages.createDiagnosticCollection('bawbel');
-    outputChannel = vscode.window.createOutputChannel('Bawbel Scanner');
-    statusBarItem = vscode.window.createStatusBarItem(
-        vscode.StatusBarAlignment.Left, 100
-    );
-    statusBarItem.command = 'bawbel.showFindings';
-    statusBarItem.text = '$(shield) Bawbel';
-    statusBarItem.tooltip = 'Bawbel Scanner — click to show findings';
-    statusBarItem.show();
 
-    context.subscriptions.push(
-        vscode.commands.registerCommand('bawbel.scanFile', scanCurrentFile),
-        vscode.commands.registerCommand('bawbel.scanWorkspace', scanWorkspace),
-        vscode.commands.registerCommand('bawbel.showFindings', showFindings),
-        vscode.commands.registerCommand('bawbel.clearFindings', clearFindings),
-        vscode.commands.registerCommand('bawbel.install', () => ensureInstalled(true)),
-        diagnosticCollection,
-        statusBarItem,
-        outputChannel,
-    );
+export async function activate(context: vscode.ExtensionContext) {
+  diagnosticCollection = vscode.languages.createDiagnosticCollection("bawbel");
+  outputChannel = vscode.window.createOutputChannel("Bawbel Scanner");
 
-    // Auto-scan on save
-    context.subscriptions.push(
-        vscode.workspace.onDidSaveTextDocument((doc) => {
-            const cfg = vscode.workspace.getConfiguration('bawbel');
-            if (cfg.get<boolean>('scanOnSave', true) && shouldScanFile(doc.fileName)) {
-                scanFile(doc.fileName);
-            }
-        })
-    );
+  statusBarItem = vscode.window.createStatusBarItem(
+    vscode.StatusBarAlignment.Left, 100
+  );
+  statusBarItem.command = "bawbel.scanFile";
+  statusBarItem.tooltip = "Bawbel Scanner — click to scan | Cmd+Alt+B";
+  updateStatusBar("idle");
+  statusBarItem.show();
 
-    // Silently ensure CLI is installed on first activation
-    const ready = await ensureInstalled(false);
-    if (ready) {
-        outputChannel.appendLine('Bawbel Scanner ready  ·  Cmd+Shift+B to scan');
-        const editor = vscode.window.activeTextEditor;
-        if (editor && shouldScanFile(editor.document.fileName)) {
-            scanFile(editor.document.fileName);
-        }
-    }
+  context.subscriptions.push(
+    vscode.commands.registerCommand("bawbel.scanFile",      cmdScanFile),
+    vscode.commands.registerCommand("bawbel.scanWorkspace", cmdScanWorkspace),
+    vscode.commands.registerCommand("bawbel.installCLI",    cmdInstallCLI),
+    vscode.commands.registerCommand("bawbel.openPiranhaDB", cmdOpenPiranhaDB),
+    diagnosticCollection,
+    statusBarItem,
+    outputChannel
+  );
+
+  context.subscriptions.push(
+    vscode.workspace.onDidSaveTextDocument(onDidSave),
+    vscode.window.onDidChangeActiveTextEditor(onEditorChange)
+  );
+
+  await ensureCLI();
+  outputChannel.appendLine("Bawbel Scanner v1.0.1 activated.");
+  outputChannel.appendLine("Save any .md .yaml .yml .json .txt — findings appear as inline diagnostics.");
 }
 
-// ── Auto-install ──────────────────────────────────────────────────────────────
-/**
- * Ensure bawbel CLI is available. Installs automatically if missing.
- * Concurrent calls share one install promise — no duplicate installs.
- */
-async function ensureInstalled(explicit: boolean): Promise<boolean> {
-    if (installPromise) {
-        return installPromise;
-    }
-    installPromise = _doEnsureInstalled(explicit).finally(() => {
-        installPromise = null;
-    });
-    return installPromise;
+export function deactivate() {}
+
+// ── CLI Management ────────────────────────────────────────────────────────────
+
+async function ensureCLI(): Promise<boolean> {
+  const python = await findBawbel();
+  if (python) {
+    cliPath = python;
+    const v = await runCommand(python, ["--version"]);
+    outputChannel.appendLine(`CLI: ${python} — ${v.stdout.trim() || v.stderr.trim()}`);
+    return true;
+  }
+
+  const choice = await vscode.window.showInformationMessage(
+    "Bawbel Scanner: CLI not found. Install bawbel-scanner now?",
+    "Install", "Not now"
+  );
+  if (choice !== "Install") { return false; }
+  return installCLI();
 }
 
-async function _doEnsureInstalled(explicit: boolean): Promise<boolean> {
-    const cfg = vscode.workspace.getConfiguration('bawbel');
-    const userExecutable = cfg.get<string>('executable', '');
-
-    // User configured a custom path — verify it and use it
-    if (userExecutable && userExecutable !== 'bawbel') {
-        return checkExecutable(userExecutable);
-    }
-
-    // Check if bawbel is already in PATH
-    if (await checkExecutable('bawbel')) {
-        return true;
-    }
-
-    // Not found — auto-install silently in background
-    outputChannel.show();
-    outputChannel.appendLine('Bawbel CLI not found — installing automatically…');
-    outputChannel.appendLine('Running: pip install "bawbel-scanner[all]"');
-    setStatus('installing');
-
-    const installed = await runPipInstall(explicit);
-    if (installed) {
-        outputChannel.appendLine('');
-        outputChannel.appendLine('✓  Bawbel Scanner installed successfully');
-        vscode.window.showInformationMessage(
-            'Bawbel Scanner installed and ready.',
-            'Show output'
-        ).then(action => {
-            if (action === 'Show output') { outputChannel.show(); }
-        });
-        setStatus('clean');
-        return true;
-    }
-
-    // Install failed — show actionable error with three fallback options
-    outputChannel.appendLine('');
-    outputChannel.appendLine('✗  Auto-install failed. Try manually:');
-    outputChannel.appendLine('   pip install "bawbel-scanner[all]"');
-    outputChannel.appendLine('   pip3 install "bawbel-scanner[all]"');
-    outputChannel.appendLine('   python -m pip install "bawbel-scanner[all]"');
-    outputChannel.appendLine('');
-    outputChannel.appendLine(
-        'Or set a custom path: VS Code Settings → bawbel.executable'
-    );
-
-    vscode.window.showErrorMessage(
-        'Bawbel: auto-install failed.',
-        'Show output',
-        'Open settings',
-    ).then(action => {
-        if (action === 'Show output') {
-            outputChannel.show();
-        } else if (action === 'Open settings') {
-            vscode.commands.executeCommand(
-                'workbench.action.openSettings', 'bawbel.executable'
-            );
-        }
-    });
-    setStatus('error');
+async function installCLI(): Promise<boolean> {
+  const pip = await findPip();
+  if (!pip) {
+    vscode.window.showErrorMessage("Bawbel: pip not found. Install Python 3.10+.");
     return false;
+  }
+  updateStatusBar("installing");
+  outputChannel.show(true);
+  outputChannel.appendLine("Installing bawbel-scanner...");
+
+  const result = await runCommand(pip, ["install", "--upgrade", "bawbel-scanner"]);
+  if (result.code === 0) {
+    const bawbel = await findBawbel();
+    cliPath = bawbel;
+    updateStatusBar("idle");
+    outputChannel.appendLine("Installation complete ✓");
+    vscode.window.showInformationMessage("Bawbel Scanner installed ✓");
+    return true;
+  }
+  updateStatusBar("error");
+  outputChannel.appendLine(`Failed:\n${result.stderr}`);
+  vscode.window.showErrorMessage("Bawbel: install failed. See Output panel.");
+  return false;
 }
 
-/**
- * Try pip install using multiple candidate commands.
- * Tries pip → pip3 → python -m pip → python3 -m pip in order.
- */
-function runPipInstall(showProgress: boolean): Promise<boolean> {
-    const candidates = [
-        'pip install "bawbel-scanner[all]" --quiet',
-        'pip3 install "bawbel-scanner[all]" --quiet',
-        'python -m pip install "bawbel-scanner[all]" --quiet',
-        'python3 -m pip install "bawbel-scanner[all]" --quiet',
-    ];
+// Find `bawbel` binary (installed by pip as a script, not a module)
+async function findBawbel(): Promise<string | null> {
+  const config = vscode.workspace.getConfiguration("bawbel");
+  const configured = config.get<string>("bawbelPath", "");
+  if (configured) { return configured; }
 
-    const tryNext = (remaining: string[]): Promise<boolean> => {
-        if (remaining.length === 0) { return Promise.resolve(false); }
-        const [cmd, ...rest] = remaining;
-        outputChannel.appendLine(`Trying: ${cmd}`);
-        return new Promise(resolve => {
-            exec(cmd, { timeout: 120_000 }, (error, stdout, stderr) => {
-                if (!error) {
-                    if (stdout.trim()) { outputChannel.appendLine(stdout); }
-                    resolve(true);
-                } else {
-                    const firstLine = (stderr || '').split('\n')[0];
-                    if (firstLine) { outputChannel.appendLine(`  → ${firstLine}`); }
-                    resolve(tryNext(rest));
-                }
-            });
-        });
-    };
+  for (const candidate of ["bawbel", "/usr/local/bin/bawbel", `${process.env.HOME}/.local/bin/bawbel`]) {
+    const check = await runCommand(candidate, ["--version"]);
+    if (check.code === 0) { return candidate; }
+  }
+  return null;
+}
 
-    if (showProgress) {
-        return vscode.window.withProgress(
-            {
-                location: vscode.ProgressLocation.Notification,
-                title: 'Bawbel: Installing scanner…',
-                cancellable: false,
-            },
-            () => tryNext(candidates)
-        );
+async function findPip(): Promise<string | null> {
+  for (const c of ["pip3", "pip", "python3 -m pip"]) {
+    if ((await runCommand(c.split(" ")[0], [...c.split(" ").slice(1), "--version"])).code === 0) {
+      return c.split(" ")[0];
     }
-    return tryNext(candidates);
+  }
+  return null;
 }
 
-/** Check if an executable exists and is runnable. */
-function checkExecutable(executable: string): Promise<boolean> {
-    return new Promise(resolve => {
-        execFile(executable, ['version'], { timeout: 10_000 },
-            (error) => {
-                const code = (error as NodeJS.ErrnoException)?.code;
-                resolve(!error || code !== 'ENOENT');
-            }
-        );
-    });
+// ── Commands ──────────────────────────────────────────────────────────────────
+
+async function cmdScanFile() {
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) {
+    vscode.window.showInformationMessage("Bawbel: no active file to scan."); return;
+  }
+  await scanFile(editor.document.fileName);
 }
 
-// ── File type filter ──────────────────────────────────────────────────────────
-function shouldScanFile(filePath: string): boolean {
-    return ['.md', '.yaml', '.yml', '.json', '.txt'].includes(
-        path.extname(filePath).toLowerCase()
-    );
+async function cmdScanWorkspace() {
+  const folders = vscode.workspace.workspaceFolders;
+  if (!folders || folders.length === 0) {
+    vscode.window.showInformationMessage("Bawbel: no workspace folder open."); return;
+  }
+  outputChannel.show(true);
+  await scanPath(folders[0].uri.fsPath, true);
 }
 
-// ── Scan single file ──────────────────────────────────────────────────────────
-async function scanCurrentFile(): Promise<void> {
-    const editor = vscode.window.activeTextEditor;
-    if (!editor) {
-        vscode.window.showWarningMessage('Bawbel: No active file to scan');
-        return;
-    }
-    await scanFile(editor.document.fileName);
+async function cmdInstallCLI() { await installCLI(); }
+
+function cmdOpenPiranhaDB() {
+  vscode.env.openExternal(vscode.Uri.parse("https://api.piranha.bawbel.io"));
 }
+
+// ── Event Handlers ────────────────────────────────────────────────────────────
+
+async function onDidSave(document: vscode.TextDocument) {
+  const config = vscode.workspace.getConfiguration("bawbel");
+  if (!config.get<boolean>("scanOnSave", true)) { return; }
+  const exts = config.get<string[]>("scanExtensions",
+    [".md", ".yaml", ".yml", ".json", ".txt"]);
+  if (!exts.includes(path.extname(document.fileName).toLowerCase())) { return; }
+  await scanFile(document.fileName);
+}
+
+function onEditorChange(editor: vscode.TextEditor | undefined) {
+  if (!editor) { return; }
+  const diags = diagnosticCollection.get(editor.document.uri) ?? [];
+  diags.length > 0
+    ? updateStatusBar("findings", diags.length)
+    : updateStatusBar("idle");
+}
+
+// ── Core Scan ─────────────────────────────────────────────────────────────────
 
 async function scanFile(filePath: string): Promise<void> {
-    if (!await ensureInstalled(false)) { return; }
-
-    const cfg = vscode.workspace.getConfiguration('bawbel');
-    const executable = cfg.get<string>('executable', '') || 'bawbel';
-    const noIgnore = cfg.get<boolean>('noIgnore', false);
-    const enableLLM = cfg.get<boolean>('enableLLM', false);
-
-    setStatus('scanning');
-    const args = ['scan', filePath, '--format', 'json'];
-    if (noIgnore) { args.push('--no-ignore'); }
-
-    const env: NodeJS.ProcessEnv = { ...process.env };
-    if (!enableLLM) { env['BAWBEL_LLM_ENABLED'] = 'false'; }
-
-    try {
-        const output = await runBawbel(executable, args, env);
-        const results: BawbelResult[] = JSON.parse(output || '[]');
-        applyDiagnostics(filePath, results);
-        const count = results.reduce((n, r) => n + (r.findings?.length ?? 0), 0);
-        setStatus(count === 0 ? 'clean' : 'findings', count);
-        if (count > 0) {
-            outputChannel.appendLine(`⚠  ${path.basename(filePath)} — ${count} finding(s)`);
-            results.forEach(r => r.findings?.forEach(f => {
-                outputChannel.appendLine(
-                    `   L${f.line ?? '?'}  [${f.severity.toUpperCase()}]  `
-                    + `${f.ave_id ?? f.rule_id}  ${f.title}`
-                );
-            }));
-        } else {
-            outputChannel.appendLine(`✓  ${path.basename(filePath)}`);
-        }
-    } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        if (!msg.includes('ENOENT')) {
-            setStatus('error');
-            outputChannel.appendLine(`Error scanning ${path.basename(filePath)}: ${msg}`);
-        }
-    }
+  await scanPath(filePath, false);
 }
 
-// ── Scan workspace ────────────────────────────────────────────────────────────
-async function scanWorkspace(): Promise<void> {
-    const folders = vscode.workspace.workspaceFolders;
-    if (!folders?.length) {
-        vscode.window.showWarningMessage('Bawbel: No workspace folder open');
-        return;
+async function scanPath(targetPath: string, recursive: boolean): Promise<void> {
+  if (isScanning) { return; }
+  if (!cliPath) { await ensureCLI(); if (!cliPath) { return; } }
+
+  isScanning = true;
+  updateStatusBar("scanning");
+
+  try {
+    const args = ["scan", targetPath, "--format", "json"];
+    if (recursive) { args.push("--recursive"); }
+
+    outputChannel.appendLine(`\n$ ${cliPath} ${args.join(" ")}`);
+    const res = await runCommand(cliPath, args);
+
+    outputChannel.appendLine(`exit: ${res.code}`);
+    if (res.stderr.trim()) {
+      outputChannel.appendLine(`stderr: ${res.stderr.trim()}`);
     }
-    if (!await ensureInstalled(false)) { return; }
 
-    const cfg = vscode.workspace.getConfiguration('bawbel');
-    const executable = cfg.get<string>('executable', '') || 'bawbel';
-    const noIgnore = cfg.get<boolean>('noIgnore', false);
-    const root = folders[0].uri.fsPath;
-    const args = ['scan', root, '--recursive', '--format', 'json'];
-    if (noIgnore) { args.push('--no-ignore'); }
+    // exit 0 = clean, 1/2 = findings — all valid
+    const raw = res.stdout.trim();
+    if (!raw) {
+      outputChannel.appendLine("No output — scan may have failed. Check stderr above.");
+      updateStatusBar("error");
+      return;
+    }
 
-    setStatus('scanning');
-    outputChannel.appendLine(`Scanning workspace: ${root}`);
+    // Real output format: JSON array starting with [
+    const jsonStart = raw.indexOf("[");
+    if (jsonStart < 0) {
+      // Might be an error message — show it
+      outputChannel.appendLine(`Unexpected output: ${raw.slice(0, 300)}`);
+      updateStatusBar("error");
+      return;
+    }
 
+    let results: BawbelFileResult[];
     try {
-        const output = await runBawbel(executable, args, {
-            ...process.env, BAWBEL_LLM_ENABLED: 'false'
-        });
-        const results: BawbelResult[] = JSON.parse(output || '[]');
-        diagnosticCollection.clear();
-        let total = 0;
-        for (const r of results) {
-            applyDiagnostics(r.file_path, [r]);
-            total += r.findings?.length ?? 0;
-        }
-        setStatus(total === 0 ? 'clean' : 'findings', total);
-        outputChannel.appendLine(`Done — ${results.length} files, ${total} finding(s)`);
-    } catch (err: unknown) {
-        setStatus('error');
-        outputChannel.appendLine(`Workspace scan error: ${err}`);
+      results = JSON.parse(raw.slice(jsonStart));
+    } catch (e) {
+      outputChannel.appendLine(`JSON parse error: ${e}`);
+      outputChannel.appendLine(`Raw: ${raw.slice(0, 300)}`);
+      updateStatusBar("error");
+      return;
     }
+
+    // Clear old diagnostics for scanned files
+    for (const r of results) {
+      diagnosticCollection.set(vscode.Uri.file(r.file_path), []);
+    }
+
+    let totalFindings = 0;
+    for (const r of results) {
+      applyResult(r);
+      totalFindings += r.findings?.length ?? 0;
+      outputChannel.appendLine(formatSummary(r));
+    }
+
+    totalFindings > 0
+      ? updateStatusBar("findings", totalFindings)
+      : updateStatusBar("idle");
+
+  } finally {
+    isScanning = false;
+  }
 }
 
 // ── Diagnostics ───────────────────────────────────────────────────────────────
-function applyDiagnostics(filePath: string, results: BawbelResult[]): void {
-    const cfg = vscode.workspace.getConfiguration('bawbel');
-    const failSev = cfg.get<string>('failOnSeverity', 'high');
-    const diagnostics: vscode.Diagnostic[] = [];
 
-    for (const result of results) {
-        for (const f of result.findings ?? []) {
-            const line = Math.max(0, (f.line ?? 1) - 1);
-            const diag = new vscode.Diagnostic(
-                new vscode.Range(line, 0, line, 999),
-                `[${f.ave_id ?? 'N/A'}] ${f.title}  (${f.engine})`,
-                findingToVscodeSeverity(f.severity, failSev),
-            );
-            diag.source = 'Bawbel';
-            diag.code = {
-                value: f.ave_id ?? f.rule_id,
-                target: vscode.Uri.parse(
-                    `https://github.com/bawbel/bawbel-ave/blob/main/records/${f.ave_id ?? f.rule_id}.md`
-                ),
-            };
-            diagnostics.push(diag);
-        }
-    }
-    diagnosticCollection.set(vscode.Uri.file(filePath), diagnostics);
-}
+function applyResult(result: BawbelFileResult): void {
+  const config     = vscode.workspace.getConfiguration("bawbel");
+  const failSevIdx = severityIndex(
+    config.get<string>("failOnSeverity", "high").toUpperCase());
 
-// ── Status bar ────────────────────────────────────────────────────────────────
-type StatusState = 'installing' | 'scanning' | 'clean' | 'findings' | 'error';
+  const uri   = vscode.Uri.file(result.file_path);
+  const diags: vscode.Diagnostic[] = [];
 
-function setStatus(state: StatusState, count?: number): void {
-    const states: Record<StatusState, [string, string | undefined]> = {
-        installing: ['$(sync~spin) Bawbel: installing…', undefined],
-        scanning:   ['$(sync~spin) Bawbel: scanning…',  undefined],
-        clean:      ['$(shield) Bawbel: ✓ clean',       undefined],
-        findings:   [`$(shield) Bawbel: ${count} finding(s)`, 'statusBarItem.warningBackground'],
-        error:      ['$(shield) Bawbel: error — click for help', 'statusBarItem.errorBackground'],
+  for (const f of result.findings ?? []) {
+    const line  = Math.max(0, (f.line ?? 1) - 1);
+    const col   = Math.max(0, (f.col  ?? 1) - 1);
+    const len   = f.match?.length ?? 80;
+    const range = new vscode.Range(line, col, line, col + len);
+
+    const vsSev = severityIndex(f.severity) >= failSevIdx
+      ? vscode.DiagnosticSeverity.Error
+      : vscode.DiagnosticSeverity.Warning;
+
+    const emoji = ({ CRITICAL:"🔴", HIGH:"🟠", MEDIUM:"🟡", LOW:"🔵" } as
+      Record<string,string>)[f.severity] ?? "⚪";
+
+    const fix = getRemediation(f.rule_id, f.description);
+    const owasp = f.owasp?.join(", ") ?? "";
+
+    // Multi-line message — shows in hover tooltip and Problems panel
+    const msg = [
+      `${emoji} [${f.severity}] ${f.title}`,
+      ``,
+      f.match   ? `Matched: "${f.match.slice(0, 100)}"` : "",
+      ``,
+      `How to fix:`,
+      `  ${fix}`,
+      ``,
+      `AVE: ${f.ave_id}  |  CVSS-AI: ${f.cvss_ai}/10  |  Engine: ${f.engine}`,
+      owasp     ? `OWASP: ${owasp}` : "",
+      `Details: https://api.piranha.bawbel.io/records/${f.ave_id}`,
+    ].filter(s => s !== undefined).join("\n");
+
+    const diag   = new vscode.Diagnostic(range, msg, vsSev);
+    diag.source  = "Bawbel";
+    diag.code    = {
+      value:  f.ave_id,
+      target: vscode.Uri.parse(
+        `https://api.piranha.bawbel.io/records/${f.ave_id}`),
     };
-    const [text, bg] = states[state];
-    statusBarItem.text = text;
-    statusBarItem.backgroundColor = bg
-        ? new vscode.ThemeColor(bg)
-        : undefined;
+    if (f.severity === "LOW") { diag.tags = [vscode.DiagnosticTag.Unnecessary]; }
+
+    diags.push(diag);
+  }
+
+  diagnosticCollection.set(uri, diags);
 }
 
-function showFindings(): void { outputChannel.show(); }
-function clearFindings(): void { diagnosticCollection.clear(); setStatus('clean'); }
+// ── Status Bar ────────────────────────────────────────────────────────────────
 
-function runBawbel(
-    executable: string, args: string[], env: NodeJS.ProcessEnv
-): Promise<string> {
-    return new Promise((resolve, reject) => {
-        execFile(executable, args, { env, maxBuffer: 10 * 1024 * 1024, timeout: 60_000 },
-            (error, stdout) => {
-                const code = (error as NodeJS.ErrnoException & { code?: number })?.code;
-                if (error && code !== 2) { reject(error); return; }
-                resolve(stdout);
-            }
-        );
-    });
+type StatusState = "idle" | "scanning" | "findings" | "error" | "installing";
+
+function updateStatusBar(state: StatusState, count?: number) {
+  if (!vscode.workspace.getConfiguration("bawbel")
+      .get<boolean>("showStatusBar", true)) {
+    statusBarItem.hide(); return;
+  }
+  switch (state) {
+    case "idle":
+      statusBarItem.text            = "$(shield) Bawbel: ✓ clean";
+      statusBarItem.backgroundColor = undefined;
+      statusBarItem.color           = undefined;
+      statusBarItem.tooltip         = "Bawbel Scanner — no findings";
+      break;
+    case "scanning":
+      statusBarItem.text            = "$(loading~spin) Bawbel: scanning…";
+      statusBarItem.backgroundColor = undefined;
+      statusBarItem.color           = undefined;
+      break;
+    case "findings":
+      statusBarItem.text            = `$(warning) Bawbel: ${count} finding(s)`;
+      statusBarItem.backgroundColor =
+        new vscode.ThemeColor("statusBarItem.warningBackground");
+      statusBarItem.tooltip         = "Bawbel Scanner — click to scan current file";
+      break;
+    case "error":
+      statusBarItem.text            = "$(error) Bawbel: error";
+      statusBarItem.backgroundColor =
+        new vscode.ThemeColor("statusBarItem.errorBackground");
+      statusBarItem.tooltip         = "Bawbel Scanner — check Output panel";
+      break;
+    case "installing":
+      statusBarItem.text            = "$(loading~spin) Bawbel: installing…";
+      statusBarItem.backgroundColor = undefined;
+      break;
+  }
+  statusBarItem.show();
 }
 
-function findingToVscodeSeverity(sev: string, failOn: string): vscode.DiagnosticSeverity {
-    const order = ['critical', 'high', 'medium', 'low'];
-    return order.indexOf(sev?.toLowerCase() ?? 'low') <= order.indexOf(failOn?.toLowerCase() ?? 'high')
-        ? vscode.DiagnosticSeverity.Error
-        : vscode.DiagnosticSeverity.Warning;
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function severityIndex(sev: string): number {
+  return ({ CRITICAL:4, HIGH:3, MEDIUM:2, LOW:1, NONE:0 } as
+    Record<string,number>)[sev.toUpperCase()] ?? 0;
 }
 
-// ── Types ─────────────────────────────────────────────────────────────────────
-interface BawbelFinding {
-    rule_id: string; ave_id: string | null; title: string;
-    severity: string; cvss_ai: number; line: number | null;
-    match: string | null; engine: string;
-}
-interface BawbelResult {
-    file_path: string; findings: BawbelFinding[];
-    suppressed_findings: BawbelFinding[]; risk_score: number;
+function formatSummary(result: BawbelFileResult): string {
+  const n = result.findings?.length ?? 0;
+  const name = path.basename(result.file_path);
+  if (n === 0) { return `  ✓ ${name} — clean (${result.scan_time_ms}ms)`; }
+  const bySev = result.findings.reduce((acc, f) => {
+    acc[f.severity] = (acc[f.severity] ?? 0) + 1; return acc;
+  }, {} as Record<string, number>);
+  const sevStr = ["CRITICAL","HIGH","MEDIUM","LOW"]
+    .filter(s => bySev[s])
+    .map(s => `${bySev[s]} ${s}`)
+    .join(" | ");
+  return `  ✗ ${name} — ${n} finding(s): ${sevStr} | risk ${result.risk_score}/10 (${result.scan_time_ms}ms)`;
 }
 
-export function deactivate(): void {
-    diagnosticCollection?.dispose();
-    statusBarItem?.dispose();
-    outputChannel?.dispose();
+function runCommand(
+  cmd: string, args: string[]
+): Promise<{ code: number; stdout: string; stderr: string }> {
+  return new Promise(resolve => {
+    let stdout = "", stderr = "";
+    const proc = cp.spawn(cmd, args, { shell: process.platform === "win32" });
+    proc.stdout.on("data", (d: Buffer) => { stdout += d.toString(); });
+    proc.stderr.on("data", (d: Buffer) => { stderr += d.toString(); });
+    proc.on("error", err  => resolve({ code: 1, stdout: "", stderr: err.message }));
+    proc.on("close", code => resolve({ code: code ?? 1, stdout, stderr }));
+  });
 }
