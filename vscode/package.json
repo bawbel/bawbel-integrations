@@ -1,8 +1,8 @@
 {
   "name": "bawbel-scanner",
   "displayName": "Bawbel Scanner",
-  "description": "AVE vulnerability scanner for agentic AI components — SKILL.md, MCP servers, system prompts. Inline diagnostics, auto-scan on save, 37 rules, 40 AVE records.",
-  "version": "1.0.0",
+  "description": "AVE vulnerability scanner for agentic AI components \u2014 SKILL.md, MCP servers, system prompts. Inline diagnostics, auto-scan on save, 37 rules, 40 AVE records.",
+  "version": "1.0.1",
   "publisher": "bawbel",
   "license": "MIT",
   "icon": "images/icon.png",
@@ -65,8 +65,8 @@
     "keybindings": [
       {
         "command": "bawbel.scanFile",
-        "key": "ctrl+shift+b",
-        "mac": "cmd+shift+b",
+        "key": "ctrl+alt+b",
+        "mac": "cmd+alt+b",
         "when": "editorFocus"
       }
     ],
@@ -88,7 +88,7 @@
             "none"
           ],
           "default": "high",
-          "description": "Minimum severity to show as an error (vs warning)."
+          "description": "Minimum severity shown as an error squiggle (vs warning)."
         },
         "bawbel.scanExtensions": {
           "type": "array",
@@ -104,20 +104,15 @@
           ],
           "description": "File extensions to scan on save."
         },
-        "bawbel.pythonPath": {
+        "bawbel.bawbelPath": {
           "type": "string",
           "default": "",
-          "description": "Path to Python executable. Leave empty to auto-detect."
+          "description": "Path to bawbel binary. Leave empty to auto-detect (checks PATH and common pip install locations)."
         },
         "bawbel.showStatusBar": {
           "type": "boolean",
           "default": true,
           "description": "Show scan status in the status bar."
-        },
-        "bawbel.extras": {
-          "type": "string",
-          "default": "all",
-          "description": "pip extras to install with bawbel-scanner. E.g. 'yara semgrep' or 'all'."
         }
       }
     },
@@ -145,7 +140,6 @@
   "devDependencies": {
     "@types/node": "^20.19.39",
     "@types/vscode": "^1.85.0",
-    "@vscode/vsce": "^3.9.1",
     "typescript": "^5.9.3"
   }
 }
