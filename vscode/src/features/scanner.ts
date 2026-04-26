@@ -18,8 +18,8 @@ import { BawbelFileResult, ScanRequest, ScanMode, ScanScope } from "../core/type
 // ── Engine sets per mode ──────────────────────────────────────────────────────
 // auto + watch: fast engines only — invisible on any modern machine (~25ms)
 // full: all engines — user-initiated, shows progress
-const ENGINES_FAST = "pattern,yara";
-const ENGINES_FULL = undefined; // undefined = CLI default (all configured engines)
+// const ENGINES_FAST = "pattern,yara";
+// const ENGINES_FULL = undefined; // undefined = CLI default (all configured engines)
 
 // ── Scanner ───────────────────────────────────────────────────────────────────
 
@@ -109,7 +109,7 @@ export class Scanner {
       scope,
       target,
       mode:    "watch",
-      engines: ENGINES_FAST,
+      // engines: ENGINES_FAST,
     };
 
     const args = this.buildArgs(request);
@@ -164,12 +164,12 @@ export class Scanner {
     }
 
     // Engine restriction for fast modes
-    const engines = request.engines
-      ?? (request.mode === "auto" ? ENGINES_FAST : ENGINES_FULL);
+    // const engines = request.engines
+    //   ?? (request.mode === "auto" ? ENGINES_FAST : ENGINES_FULL);
 
-    if (engines) {
-      args.push("--engines", engines);
-    }
+    // if (engines) {
+    //   args.push("--engines", engines);
+    // }
 
     return args;
   }
