@@ -113,21 +113,10 @@ See [`vscode/README.md`](vscode/README.md) for full documentation.
 
 Block malicious skills at the commit boundary — before they reach CI.
 
-### Setup
-
-```bash
-pip install pre-commit
-pre-commit install
-```
-
 ### Option 1 — via bawbel-integrations repo (recommended)
 
-pre-commit clones the repo once and caches it. No extra dependencies to manage.
-
-```bash
-# Required once before using the hook
-pip install "bawbel-scanner>=1.0.1"
-```
+pre-commit automatically installs `bawbel-scanner` in an isolated virtualenv.
+No manual `pip install` needed.
 
 ```yaml
 # .pre-commit-config.yaml
@@ -161,7 +150,7 @@ repos:
 
 ### Option 2 — local hook (air-gapped / no GitHub access)
 
-Use this when your environment cannot reach GitHub, or you want to control
+Use this when your environment cannot reach GitHub, or you want to manage
 the scanner version yourself.
 
 ```bash
@@ -194,7 +183,7 @@ repos:
         language: system
         types_or: [markdown, yaml, json]
         pass_filenames: true
-        args: ["--fail-on-severity", "high", "--no-ignore"]
+        args: ["--fail-on-severity", "high"]
 ```
 
 ### Setup
@@ -205,6 +194,23 @@ pre-commit install
 
 # Test without committing
 pre-commit run bawbel-scan --all-files
+```
+
+### Example output
+
+```
+Bawbel Scanner...........................................................Failed
+- hook id: bawbel-scan
+- exit code: 1
+
+Bawbel Scanner
+──────────────────────────────────────────────────
+AVE vulnerabilities found (HIGH+):
+  [HIGH] AVE-2026-00004  skill.md  line 2
+
+Run 'bawbel report skill.md' for remediation steps.
+Add '<!-- bawbel-ignore: rule_id -->' to suppress false positives.
+See: https://bawbel.io/docs/suppression
 ```
 
 ### Suppressing false positives
