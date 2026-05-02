@@ -1,0 +1,34 @@
+# Bawbel Scanner — pre-commit hook definitions
+# https://bawbel.io/docs/integrations/pre-commit
+#
+# Usage in .pre-commit-config.yaml:
+#
+#   repos:
+#     - repo: https://github.com/bawbel/bawbel-integrations
+#       rev: v1
+#       hooks:
+#         - id: bawbel-scan
+
+- id: bawbel-scan
+  name: Bawbel Scanner
+  description: >
+    Scan agentic AI components (SKILL.md, MCP manifests, system prompts)
+    for AVE vulnerabilities before they reach production.
+  entry: python pre-commit/bawbel_pre_commit.py
+  language: python
+  types_or: [markdown, yaml, json]
+  pass_filenames: true
+  additional_dependencies:
+    - "bawbel-scanner>=1.0.1"
+
+- id: bawbel-scan-all
+  name: Bawbel Scanner (all engines)
+  description: >
+    Scan agentic AI components with all detection engines enabled
+    (pattern + YARA + Semgrep + Magika). Slower but more thorough.
+  entry: python pre-commit/bawbel_pre_commit.py
+  language: python
+  types_or: [markdown, yaml, json]
+  pass_filenames: true
+  additional_dependencies:
+    - "bawbel-scanner[all]>=1.0.1"
