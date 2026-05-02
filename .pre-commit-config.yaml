@@ -1,0 +1,5 @@
+repos:
+  - repo: ~/bawbel/bawbel-integrations
+    rev: HEAD
+    hooks:
+      - id: bawbel-scan
