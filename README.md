@@ -15,11 +15,13 @@ across every stage of your development workflow.
 | Integration | Status | Directory |
 |---|---|---|
 | [GitHub Actions](#github-actions) | ✅ v1 | [`action.yml`](action.yml) |
-| [VS Code Extension](#vs-code-extension) | ✅ v1.1.0 | [`vscode/`](vscode/) |
-| [Pre-commit](#pre-commit) | 🔨 v1.1 | `pre-commit/` |
-| [GitLab CI](#gitlab-ci) | 🔨 v1.1 | `gitlab-ci/` |
-| Jenkins | 📋 v1.2 | `jenkins/` |
-| CircleCI | 📋 v1.2 | `circleci/` |
+| [VS Code Extension](#vs-code-extension) | ✅ v1.1.1 | [`vscode/`](vscode/) |
+| [Pre-commit](#pre-commit) | ✅ v1.1 | [`.pre-commit-hooks.yaml`](.pre-commit-hooks.yaml) |
+| [GitLab CI](#gitlab-ci) | ✅ v1.1 | [`examples/gitlab-ci.yml`](examples/gitlab-ci.yml) |
+| [Jenkins](#jenkins) | ✅ v1.1 | [`examples/Jenkinsfile`](examples/Jenkinsfile) |
+| [CircleCI](#circleci) | ✅ v1.1 | [`examples/circleci.yml`](examples/circleci.yml) |
+| [Azure DevOps](#azure-devops) | ✅ v1.1 | [`examples/azure-devops.yml`](examples/azure-devops.yml) |
+| [Bitbucket Pipelines](#bitbucket-pipelines) | ✅ v1.1 | [`examples/bitbucket-pipelines.yml`](examples/bitbucket-pipelines.yml) |
 
 ---
 
@@ -64,7 +66,6 @@ jobs:
 | `extras` | `all` | pip extras: `yara semgrep llm magika all` |
 
 See [`action.yml`](action.yml) for full input/output reference.
-See [`examples/`](examples/) for GitLab CI, Jenkins, CircleCI, and Azure DevOps patterns.
 
 ---
 
@@ -101,17 +102,20 @@ pip install bawbel-scanner
 cd vscode/
 npm install
 npx vsce package --no-dependencies
-code --install-extension bawbel-scanner-1.1.0.vsix
+code --install-extension bawbel-scanner-1.1.1.vsix
 ```
 
-See [`vscode/README.md`](vscode/README.md) for full documentation, configuration
-reference, and GIF demos.
+See [`vscode/README.md`](vscode/README.md) for full documentation.
 
 ---
 
 ## Pre-commit
 
-Block malicious skills at the commit boundary — before they ever reach CI.
+Block malicious skills at the commit boundary — before they reach CI.
+
+### Option 1 — via bawbel-integrations repo (recommended)
+
+pre-commit clones the repo once and caches it. No extra dependencies to manage.
 
 ```yaml
 # .pre-commit-config.yaml
@@ -119,21 +123,95 @@ repos:
   - repo: https://github.com/bawbel/bawbel-integrations
     rev: v1
     hooks:
+      - id: bawbel-scan          # pattern engine only (~15ms per file)
+```
+
+All engines (YARA + Semgrep + Magika — slower, more thorough):
+
+```yaml
+repos:
+  - repo: https://github.com/bawbel/bawbel-integrations
+    rev: v1
+    hooks:
+      - id: bawbel-scan-all
+```
+
+Custom severity threshold:
+
+```yaml
+repos:
+  - repo: https://github.com/bawbel/bawbel-integrations
+    rev: v1
+    hooks:
       - id: bawbel-scan
+        args: ["--fail-on-severity", "critical"]
+```
+
+### Option 2 — local hook (air-gapped / no GitHub access)
+
+Use this when your environment cannot reach GitHub, or you want to control
+the scanner version yourself.
+
+```bash
+pip install "bawbel-scanner>=1.0.1"
+```
+
+```yaml
+# .pre-commit-config.yaml
+repos:
+  - repo: local
+    hooks:
+      - id: bawbel-scan
+        name: Bawbel Scanner
+        entry: bawbel scan
+        language: system
+        types_or: [markdown, yaml, json]
+        pass_filenames: true
         args: ["--fail-on-severity", "high"]
 ```
+
+All engines:
+
+```yaml
+repos:
+  - repo: local
+    hooks:
+      - id: bawbel-scan-all
+        name: Bawbel Scanner (all engines)
+        entry: bawbel scan
+        language: system
+        types_or: [markdown, yaml, json]
+        pass_filenames: true
+        args: ["--fail-on-severity", "high", "--no-ignore"]
+```
+
+### Setup
 
 ```bash
 pip install pre-commit
 pre-commit install
+
+# Test without committing
 pre-commit run bawbel-scan --all-files
 ```
 
-> **Status:** coming in v1.1 — hook definition in progress.
+### Suppressing false positives
+
+```markdown
+fetch https://internal.company.com  <!-- bawbel-ignore: bawbel-external-fetch -->
+```
+
+Skip hooks for one commit:
+
+```bash
+git commit --no-verify
+```
 
 ---
 
 ## GitLab CI
+
+Findings uploaded as SAST report — visible in the GitLab Security Dashboard.
 
 ```yaml
 # .gitlab-ci.yml
@@ -143,12 +221,194 @@ bawbel-scan:
   script:
     - pip install "bawbel-scanner[all]"
     - bawbel scan . --recursive --fail-on-severity high --format sarif
+      --output bawbel-results.sarif
   artifacts:
     reports:
       sast: bawbel-results.sarif
+    paths:
+      - bawbel-results.sarif
+    when: always
 ```
 
-> **Status:** coming in v1.1.
+Block merge requests on findings:
+
+```yaml
+bawbel-scan:
+  stage: test
+  image: python:3.12-slim
+  script:
+    - pip install "bawbel-scanner[all]"
+    - bawbel scan . --recursive --fail-on-severity high
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+```
+
+---
+
+## Jenkins
+
+```groovy
+// Jenkinsfile
+pipeline {
+    agent any
+
+    stages {
+        stage('Bawbel Security Scan') {
+            steps {
+                sh 'pip install "bawbel-scanner[all]"'
+                sh 'bawbel scan . --recursive --format sarif'
+            }
+            post {
+                always {
+                    // Archive SARIF for downstream processing
+                    archiveArtifacts artifacts: 'bawbel-results.sarif',
+                                     allowEmptyArchive: true
+                }
+            }
+        }
+    }
+}
+```
+
+Fail the build on HIGH+ findings:
+
+```groovy
+stage('Bawbel Security Scan') {
+    steps {
+        sh '''
+            pip install "bawbel-scanner[all]"
+            bawbel scan . --recursive --fail-on-severity high
+        '''
+    }
+}
+```
+
+With Docker agent:
+
+```groovy
+pipeline {
+    agent {
+        docker { image 'python:3.12-slim' }
+    }
+    stages {
+        stage('Scan') {
+            steps {
+                sh 'pip install "bawbel-scanner[all]"'
+                sh 'bawbel scan . --recursive --fail-on-severity high'
+            }
+        }
+    }
+}
+```
+
+---
+
+## CircleCI
+
+```yaml
+# .circleci/config.yml
+version: 2.1
+
+jobs:
+  bawbel-scan:
+    docker:
+      - image: cimg/python:3.12
+    steps:
+      - checkout
+      - run:
+          name: Install Bawbel Scanner
+          command: pip install "bawbel-scanner[all]"
+      - run:
+          name: Scan for AVE vulnerabilities
+          command: |
+            bawbel scan . --recursive --format sarif
+      - store_artifacts:
+          path: bawbel-results.sarif
+          destination: security/bawbel-results.sarif
+
+workflows:
+  security:
+    jobs:
+      - bawbel-scan
+```
+
+Fail on HIGH+ findings:
+
+```yaml
+      - run:
+          name: Scan for AVE vulnerabilities
+          command: |
+            bawbel scan . --recursive --fail-on-severity high
+```
+
+---
+
+## Azure DevOps
+
+```yaml
+# azure-pipelines.yml
+trigger:
+  - main
+  - develop
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+  - task: UsePythonVersion@0
+    inputs:
+      versionSpec: '3.12'
+
+  - script: pip install "bawbel-scanner[all]"
+    displayName: Install Bawbel Scanner
+
+  - script: |
+      bawbel scan . --recursive --format sarif
+    displayName: Scan for AVE vulnerabilities
+
+  - task: PublishBuildArtifacts@1
+    condition: always()
+    inputs:
+      pathToPublish: bawbel-results.sarif
+      artifactName: bawbel-security-report
+```
+
+Fail the pipeline on HIGH+ findings:
+
+```yaml
+  - script: |
+      bawbel scan . --recursive --fail-on-severity high
+    displayName: Scan for AVE vulnerabilities
+    failOnStderr: false
+```
+
+---
+
+## Bitbucket Pipelines
+
+```yaml
+# bitbucket-pipelines.yml
+pipelines:
+  default:
+    - step:
+        name: Bawbel Security Scan
+        image: python:3.12-slim
+        script:
+          - pip install "bawbel-scanner[all]"
+          - bawbel scan . --recursive --fail-on-severity high
+        artifacts:
+          - bawbel-results.sarif
+
+  pull-requests:
+    '**':
+      - step:
+          name: Bawbel Security Scan
+          image: python:3.12-slim
+          script:
+            - pip install "bawbel-scanner[all]"
+            - bawbel scan . --recursive --fail-on-severity high
+```
 
 ---
 
