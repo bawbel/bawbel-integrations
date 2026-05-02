@@ -1,0 +1,55 @@
+# Bawbel Scanner — CircleCI example
+# https://bawbel.io/docs/integrations/circleci
+#
+# Place this file at .circleci/config.yml in your project.
+
+version: 2.1
+
+jobs:
+  bawbel-scan:
+    docker:
+      - image: cimg/python:3.12
+    steps:
+      - checkout
+      - run:
+          name: Install Bawbel Scanner
+          command: pip install "bawbel-scanner[all]"
+      - run:
+          name: Scan for AVE vulnerabilities
+          command: |
+            bawbel scan . --recursive --fail-on-severity high --format sarif
+      - store_artifacts:
+          path: bawbel-results.sarif
+          destination: security/bawbel-results.sarif
+
+workflows:
+  security:
+    jobs:
+      - bawbel-scan
+
+# ── Only run on pull requests ─────────────────────────────────────────────────
+#
+# workflows:
+#   security:
+#     jobs:
+#       - bawbel-scan:
+#           filters:
+#             branches:
+#               ignore: main
+
+# ── Reusable command ──────────────────────────────────────────────────────────
+#
+# commands:
+#   bawbel_scan:
+#     description: Scan for AVE vulnerabilities
+#     parameters:
+#       severity:
+#         type: string
+#         default: high
+#     steps:
+#       - run:
+#           name: Install Bawbel Scanner
+#           command: pip install "bawbel-scanner[all]"
+#       - run:
+#           name: Scan
+#           command: bawbel scan . --recursive --fail-on-severity << parameters.severity >>

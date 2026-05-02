@@ -1,0 +1,60 @@
+# Bawbel Scanner — Azure DevOps Pipelines example
+# https://bawbel.io/docs/integrations/azure-devops
+#
+# Place this file at azure-pipelines.yml in your project root,
+# or include it from an existing pipeline.
+
+trigger:
+  branches:
+    include:
+      - main
+      - develop
+
+pr:
+  branches:
+    include:
+      - main
+      - develop
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+  - task: UsePythonVersion@0
+    inputs:
+      versionSpec: '3.12'
+    displayName: Use Python 3.12
+
+  - script: pip install "bawbel-scanner[all]"
+    displayName: Install Bawbel Scanner
+
+  - script: |
+      bawbel scan . --recursive --fail-on-severity high --format sarif
+    displayName: Scan for AVE vulnerabilities
+
+  - task: PublishBuildArtifacts@1
+    condition: always()
+    inputs:
+      pathToPublish: bawbel-results.sarif
+      artifactName: bawbel-security-report
+    displayName: Publish SARIF report
+
+# ── Publish to GitHub Advanced Security (GHAS) ───────────────────────────────
+# Requires the SARIF file to be uploaded via the REST API or a marketplace task.
+# See: https://docs.github.com/en/code-security/code-scanning/integrating-with-code-scanning
+
+# ── Template — reuse across multiple pipelines ───────────────────────────────
+#
+# steps:
+#   - template: bawbel-scan.yml@templates
+#
+# # bawbel-scan.yml
+# parameters:
+#   - name: severity
+#     type: string
+#     default: high
+# steps:
+#   - script: pip install "bawbel-scanner[all]"
+#     displayName: Install Bawbel Scanner
+#   - script: bawbel scan . --recursive --fail-on-severity ${{ parameters.severity }}
+#     displayName: Bawbel Security Scan
