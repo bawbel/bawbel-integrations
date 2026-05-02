@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bawbel-integrations"
+version = "1.1.1"
+description = "CI/CD integrations for Bawbel Scanner"
+requires-python = ">=3.10"
+
+[project.scripts]
+bawbel-pre-commit = "bawbel_hooks.bawbel_pre_commit:main"
+
+[tool.setuptools.packages.find]
+include = ["bawbel_hooks*"]

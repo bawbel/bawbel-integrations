@@ -1,0 +1,1 @@
+# empty — marks pre_commit/ as a Python package

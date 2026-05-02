@@ -1,0 +1,68 @@
+// Bawbel Scanner — Jenkins Pipeline example
+// https://bawbel.io/docs/integrations/jenkins
+
+pipeline {
+    agent any
+
+    stages {
+        stage('Bawbel Security Scan') {
+            steps {
+                sh 'pip install "bawbel-scanner[all]"'
+                sh 'bawbel scan . --recursive --fail-on-severity high --format sarif'
+            }
+            post {
+                always {
+                    archiveArtifacts(
+                        artifacts: 'bawbel-results.sarif',
+                        allowEmptyArchive: true
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ── Docker agent ──────────────────────────────────────────────────────────────
+//
+// pipeline {
+//     agent {
+//         docker { image 'python:3.12-slim' }
+//     }
+//     stages {
+//         stage('Bawbel Security Scan') {
+//             steps {
+//                 sh 'pip install "bawbel-scanner[all]"'
+//                 sh 'bawbel scan . --recursive --fail-on-severity high'
+//             }
+//         }
+//     }
+// }
+
+// ── Only scan on pull requests ────────────────────────────────────────────────
+//
+// pipeline {
+//     agent any
+//     when {
+//         changeRequest()
+//     }
+//     stages {
+//         stage('Bawbel Security Scan') {
+//             steps {
+//                 sh 'pip install "bawbel-scanner[all]"'
+//                 sh 'bawbel scan . --recursive --fail-on-severity high'
+//             }
+//         }
+//     }
+// }
+
+// ── Scripted pipeline ─────────────────────────────────────────────────────────
+//
+// node {
+//     stage('Checkout') {
+//         checkout scm
+//     }
+//     stage('Bawbel Security Scan') {
+//         sh 'pip install "bawbel-scanner[all]"'
+//         sh 'bawbel scan . --recursive --fail-on-severity high'
+//     }
+// }
