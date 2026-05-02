@@ -113,9 +113,21 @@ See [`vscode/README.md`](vscode/README.md) for full documentation.
 
 Block malicious skills at the commit boundary — before they reach CI.
 
+### Setup
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
 ### Option 1 — via bawbel-integrations repo (recommended)
 
 pre-commit clones the repo once and caches it. No extra dependencies to manage.
+
+```bash
+# Required once before using the hook
+pip install "bawbel-scanner>=1.0.1"
+```
 
 ```yaml
 # .pre-commit-config.yaml

@@ -14,18 +14,21 @@
   description: >
     Scan agentic AI components (SKILL.md, MCP manifests, system prompts)
     for AVE vulnerabilities before they reach production.
-  entry: python3 pre-commit/bawbel_pre_commit.py
-  language: system
+  entry: bawbel-pre-commit
+  language: python
   types_or: [markdown, yaml, json]
   pass_filenames: true
+  additional_dependencies:
+    - "bawbel-scanner>=1.0.1"
 
 - id: bawbel-scan-all
   name: Bawbel Scanner (all engines)
   description: >
     Scan agentic AI components with all detection engines enabled
     (pattern + YARA + Semgrep + Magika). Slower but more thorough.
-  entry: python3 pre-commit/bawbel_pre_commit.py
-  language: system
+  entry: bawbel-pre-commit
+  language: python
   types_or: [markdown, yaml, json]
   pass_filenames: true
-  args: ["--all-engines"]
+  additional_dependencies:
+    - "bawbel-scanner[all]>=1.0.1"
