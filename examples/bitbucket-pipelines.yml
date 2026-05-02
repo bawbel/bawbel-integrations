@@ -1,0 +1,42 @@
+# Bawbel Scanner — Bitbucket Pipelines example
+# https://bawbel.io/docs/integrations/bitbucket
+#
+# Place this file at bitbucket-pipelines.yml in your project root.
+
+image: python:3.12-slim
+
+definitions:
+  steps:
+    - step: &bawbel-scan
+        name: Bawbel Security Scan
+        script:
+          - pip install "bawbel-scanner[all]"
+          - bawbel scan . --recursive --fail-on-severity high
+        artifacts:
+          - bawbel-results.sarif
+
+pipelines:
+  default:
+    - step: *bawbel-scan
+
+  pull-requests:
+    '**':
+      - step: *bawbel-scan
+
+  branches:
+    main:
+      - step: *bawbel-scan
+    develop:
+      - step: *bawbel-scan
+
+# ── JSON output for downstream processing ────────────────────────────────────
+#
+# definitions:
+#   steps:
+#     - step: &bawbel-scan-json
+#         name: Bawbel Security Scan
+#         script:
+#           - pip install "bawbel-scanner[all]"
+#           - bawbel scan . --recursive --format json
+#         artifacts:
+#           - bawbel-results.json
